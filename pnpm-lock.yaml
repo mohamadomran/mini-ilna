@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@prisma/client':
-        specifier: ^6.16.2
+        specifier: 6.16.2
         version: 6.16.2(prisma@6.16.2(magicast@0.3.5)(typescript@5.9.2))(typescript@5.9.2)
       next:
         specifier: ^15.5.4
@@ -37,7 +37,7 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(vitest@3.2.4(@types/node@24.5.2)(jiti@2.6.0)(tsx@4.20.5))
       prisma:
-        specifier: ^6.16.2
+        specifier: 6.16.2
         version: 6.16.2(magicast@0.3.5)(typescript@5.9.2)
       rimraf:
         specifier: ^6.0.1

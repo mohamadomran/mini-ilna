@@ -1,9 +1,69 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../lib/generated/prisma"
 }
 
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
+}
+
+model tenants {
+  id         String      @id @default(cuid())
+  name       String
+  email      String      @unique
+  website    String      @unique
+  created_at DateTime    @default(now())
+
+  kb_chunks  kb_chunks[]
+  bookings   bookings[]
+  invoices   invoices[]
+
+  @@index([email])
+  @@index([website])
+}
+
+model kb_chunks {
+  id        String   @id @default(cuid())
+  tenant_id String
+  text      String
+  meta      Json     // e.g. { tf: { term: number } }
+  created_at DateTime @default(now())
+
+  tenant    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+model bookings {
+  id             String   @id @default(cuid())
+  tenant_id      String
+  service        String
+  start_time     DateTime
+  customer_phone String
+  source         String   @default("wa")
+  created_at     DateTime @default(now())
+
+  tenant         tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, start_time])
+}
+
+enum InvoiceStatus {
+    pending
+    sent
+    paid
+}
+model invoices {
+  id             String        @id @default(cuid())
+  tenant_id      String
+  amount         Int
+  currency       String        @default("AED")
+  status         InvoiceStatus @default(pending)
+  paylink        String
+  customer_phone String
+  created_at     DateTime      @default(now())
+
+  tenant         tenants       @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
 }
