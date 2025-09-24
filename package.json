@@ -8,6 +8,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
+    "pretest": "prisma migrate deploy",
     "test": "vitest run --reporter=dot",
     "test:watch": "vitest",
     "db:migrate": "prisma migrate dev",
@@ -35,6 +36,7 @@
     "@prisma/client": "6.16.2",
     "next": "^15.5.4",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.11"
   }
 }
