@@ -1,14 +1,14 @@
 # Mini-ilna Full-Stack Assignment
 
-A small vertical slice of the **ilna AI product** implemented in **Next.js + Prisma + SQLite**.
-Demonstrates end-to-end ownership of the stack:
+A small vertical slice of the **ilna AI product** implemented in **Next.js + Prisma + SQLite** that demonstrates end-to-end ownership of the stack:
 
 - Tenant onboarding
 - Website ingestion from fixture HTML
 - FAQ retrieval via TF-IDF
 - WhatsApp-like chat for bookings & payments
-- Bookings & Invoices portal
-- Quiet Hours
+- Bookings & invoices portal (desktop web)
+- Quiet Hours throttling
+- Localised UI (English ↔ Arabic, RTL-aware)
 
 ---
 
@@ -17,63 +17,77 @@ Demonstrates end-to-end ownership of the stack:
 ✅ **Tenant onboarding**
 
 - One form: `name`, `email`, `website`
-- Persists tenant, immediately kicks off ingestion from `fixtures/website.html`
+- Persists the tenant then immediately kicks off ingestion from `fixtures/website.html`
 
 ✅ **Knowledge ingestion**
 
 - Parses fixture HTML → clean text
-- Splits into ~700-char overlapping chunks (+ small overlap to preserve context)
+- Splits into ~700-char overlapping chunks (100 char overlap to preserve context)
 - Stores per-chunk term frequencies at `kb_chunks.meta.tf`
 - Endpoints: `/api/kb/ingest`, `/api/kb/search`
 
 ✅ **Retrieval**
 
 - Lightweight TF-IDF ranker (`rankChunksByTfIdf`)
-- `GET /api/kb/search?q=…&tenantId=…` → top 3 passages with scores
+- `GET /api/kb/search?q=…&tenantId=…` → up to 3 passages with scores (returns an empty array when nothing matches)
 
 ✅ **WhatsApp-like inbound**
 
 - `POST /api/channels/wa/inbound` with `{ tenantId, from, text }`
 - Regex classifier → **faq | booking | payment**
-  - **FAQ** → best passage (≤200 chars) + `chunkId`
-  - **Booking** → parses time (`parseWhen`) & service name, creates booking, returns ISO time + human message
-  - **Payment** → creates invoice (`pending`), attaches fake paylink, returns paylink
-- **Quiet Hours**: if enabled, replies with a configurable message instead of acting
+  - **FAQ** → highest-ranked passage (≤200 chars) + `chunkId`
+  - **Booking** → parses time (`parseWhen`) & service, creates booking, returns ISO start time + human reply
+  - **Payment** → creates invoice (`pending`), fills fake paylink, returns paylink metadata
+- **Quiet Hours**: when enabled the endpoint replies `{ type: "quiet", reply }` and skips any side-effects
 
-✅ **Portal**
+✅ **Portal** (`/{locale}/…`)
 
-- `/onboard` — create a tenant, auto-ingest KB
-- `/bookings?tenantId=…` — the control center:
-  - **Chat simulator** (WhatsApp-like) with quick prompts
+- `/{locale}/onboard` — create a tenant, auto-ingest KB
+- `/{locale}/bookings?tenantId=…` — control centre:
+  - **Chat simulator** with quick prompts
   - **Bookings table** (start, service, phone, created)
   - **Invoices table** (amount, status: pending/sent/paid, paylink)
   - **Actions**: send/re-send paylink, mark paid, re-ingest KB
-- `/pay/:id` — simple pay page; “Pay now” flips status → `paid`
+- `/{locale}/pay/:id` — simple pay page; “Pay now” flips status → `paid`
+- Header includes locale switcher (EN/AR) and updates layout direction (LTR/RTL)
 
 ---
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15 (App Router), TailwindCSS
+- **Frontend:** Next.js 15 (App Router), Next-Intl, TailwindCSS
 - **Backend:** Next.js Route Handlers + Server Actions
 - **DB:** SQLite (Prisma)
-- **Tests:** Vitest (API happy-path tests)
-- **Styling:** Tailwind utility classes + tiny design system (buttons, inputs, cards)
+- **Tests:** Vitest (API happy-path + edge cases)
+- **Styling:** Tailwind utility classes + lightweight design tokens
 
 ---
 
 ## Data Model (Prisma)
 
 ```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
 model tenants {
-  id         String     @id @default(cuid())
+  id         String      @id @default(cuid())
   name       String
-  email      String
-  website    String     @unique
-  created_at DateTime   @default(now())
+  email      String      @unique
+  website    String      @unique
+  created_at DateTime    @default(now())
+
+  kb_chunks  kb_chunks[]
   bookings   bookings[]
   invoices   invoices[]
-  kb_chunks  kb_chunks[]
+
+  @@index([email])
+  @@index([website])
 }
 
 model kb_chunks {
@@ -82,7 +96,10 @@ model kb_chunks {
   text       String
   meta       Json
   created_at DateTime @default(now())
-  tenant     tenants  @relation(fields: [tenant_id], references: [id])
+
+  tenant     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
 }
 
 model bookings {
@@ -91,37 +108,51 @@ model bookings {
   service        String
   start_time     DateTime
   customer_phone String
-  source         String
+  source         String   @default("wa")
   created_at     DateTime @default(now())
-  tenant         tenants  @relation(fields: [tenant_id], references: [id])
+
+  tenant         tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, start_time])
+}
+
+enum InvoiceStatus {
+  pending
+  sent
+  paid
 }
 
 model invoices {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   tenant_id      String
   amount         Int
-  currency       String
-  status         String   // pending | sent | paid | quiet
+  currency       String        @default("AED")
+  status         InvoiceStatus @default(pending)
   paylink        String
   customer_phone String
-  created_at     DateTime @default(now())
-  tenant         tenants  @relation(fields: [tenant_id], references: [id])
+  created_at     DateTime      @default(now())
+
+  tenant         tenants       @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
 }
 ```
 
 ---
 
-## Endpoints
+## API Endpoints
 
 ### Tenants
 
 - `POST /api/tenants` → `{ id }`
-  Triggers ingestion for that tenant.
+  - Validates payload, creates tenant, fire-and-forget triggers `POST /api/kb/ingest?tenantId=…`
 
 ### Knowledge Base
 
 - `POST /api/kb/ingest?tenantId=…` → `{ chunks: n }`
-- `GET  /api/kb/search?q=…&tenantId=…` → `[{ id, text, score }]`
+  - Replaces existing knowledge with fresh chunks from the fixture
+- `GET /api/kb/search?q=…&tenantId=…` → `[{ id, text, score }]`
+  - Returns `[]` when the tenant has no knowledge or nothing matches
 
 ### WhatsApp Inbound
 
@@ -136,7 +167,9 @@ model invoices {
 ### Invoices
 
 - `POST /api/invoices/:id/send` → `{ type: "sent", paylink, status }`
-- `POST /api/invoices/:id/pay` → `{ type: "paid", status }`
+- `POST /api/invoices/:id/mark-paid` → `{ ok: true, status, tenantId }`
+- `GET /api/invoices/:id/mark-paid?next=/…` → redirects or returns JSON `{ ok, status, tenantId }`
+- App route: `/{locale}/pay/:id` → simulate payment (`POST` form → mark invoice `paid`)
 
 ---
 
@@ -154,11 +187,11 @@ QUIET_HOURS_TZ=Asia/Dubai      # IANA timezone
 ```
 
 - When active, `/api/channels/wa/inbound` returns `{ type: "quiet", reply }` without creating bookings or invoices.
-- To test different timezones, change `QUIET_HOURS_TZ` and restart dev server.
+- To test different timezones, change `QUIET_HOURS_TZ` and restart the dev server.
 
 ---
 
-## Setup
+## Setup & DX
 
 ```bash
 # Install deps
@@ -176,35 +209,11 @@ pnpm dev
 
 Visit:
 
-- Onboarding: http://localhost:3000/onboard
-- Portal: http://localhost:3000/bookings?tenantId=…
+- Onboarding: http://localhost:3000/en/onboard (locale switcher toggles EN ↔ AR)
+- Portal: http://localhost:3000/en/bookings?tenantId=…
+- Pay page: http://localhost:3000/en/pay/:invoiceId
 
-> Tip: After onboarding, the page shows the new tenant ID. Use it in the `/bookings` URL.
-
----
-
-## Usage Flow
-
-1. **Onboard**
-
-   - Fill out the form, submit → ingestion runs from `fixtures/website.html`.
-
-2. **Chat**
-
-   - Go to `/bookings?tenantId=…`
-   - Try:
-     - `What are your opening hours?` → FAQ passage
-     - `I'd like a 60m massage tomorrow after 3pm` → booking
-     - `Can I pay a deposit now?` → paylink
-
-3. **Bookings / Invoices**
-
-   - New booking appears instantly (Chat triggers `router.refresh()`).
-   - Create/send paylinks; mark invoices as paid.
-   - Re-ingest KB with one click.
-
-4. **Pay Page**
-   - Open paylink → `/pay/:id` → “Pay now” flips status to `paid`.
+> Tip: after onboarding, the success toast reveals the tenant ID. Use it in the `/bookings` query string.
 
 ---
 
@@ -212,13 +221,20 @@ Visit:
 
 ```bash
 # Create tenant
-curl -s -X POST http://localhost:3000/api/tenants   -H 'content-type: application/json'   -d '{"name":"Serenity Spa","email":"owner@serenity.local","website":"https://serenity.example"}'
+curl -s -X POST http://localhost:3000/api/tenants \
+  -H 'content-type: application/json' \
+  -d '{"name":"Serenity Spa","email":"owner@serenity.local","website":"https://serenity.example"}'
 
 # Ingest KB
 curl -s "http://localhost:3000/api/kb/ingest?tenantId=<TENANT_ID>"
 
 # Ask a question
-curl -s -X POST http://localhost:3000/api/channels/wa/inbound   -H 'content-type: application/json'   -d '{"tenantId":"<TENANT_ID>","from":"+971500000001","text":"What are your opening hours?"}'
+curl -s -X POST http://localhost:3000/api/channels/wa/inbound \
+  -H 'content-type: application/json' \
+  -d '{"tenantId":"<TENANT_ID>","from":"+971500000001","text":"What are your opening hours?"}'
+
+# Mark an invoice paid
+curl -s -X POST http://localhost:3000/api/invoices/<INVOICE_ID>/mark-paid
 ```
 
 ---
@@ -231,16 +247,18 @@ pnpm test
 
 Covers:
 
-- **FAQ flow:** returns relevant passage
-- **Booking flow:** row persisted; ISO start ~tomorrow 15–18h
-- **Payment flow:** invoice creation; `/send` flips to `sent`; paylink returned
+- **FAQ flow:** TF-IDF ranking returns a relevant passage
+- **Booking flow:** WhatsApp booking persists and returns an ISO start time
+- **Payment flow:** Invoice creation + `/send` status flip + `/mark-paid` status flip
+- **KB search edge case:** empty knowledge returns `[]`
+- **Health checks / DB reset helpers**
 
 ---
 
 ## Re-ingest / Inspect / Reset
 
-- Re-ingest from the **Bookings** page (button) or:
-  ```
+- Re-ingest from the **Bookings** page (button) or via cURL:
+  ```bash
   curl -s "http://localhost:3000/api/kb/ingest?tenantId=<TENANT_ID>"
   ```
 - Inspect DB:
@@ -256,5 +274,7 @@ Covers:
 
 ## Design Notes
 
-- **Simple, testable ranking:** TF-IDF is transparent and sufficient for a small fixture.
-- **Regex intent detection:** fast and clear; upgrade path to an ML
+- **Transparent ranking:** TF-IDF keeps retrieval simple & explainable.
+- **Regex intent detection:** fast to iterate on; upgrade path to ML when needed.
+- **Server actions:** wrap fetch-based API calls so the portal stays server-rendered while reusing route handlers.
+- **Internationalisation:** Next-Intl handles routing, translations, and RTL styling with a single config file.

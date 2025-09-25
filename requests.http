@@ -1,29 +1,35 @@
 ### Create tenant
-POST http://localhost:3000/tenants
+POST http://localhost:3000/api/tenants
 Content-Type: application/json
 
 { "name": "Serenity Spa", "email": "owner@serenity.example", "website": "https://serenity.example" }
 
 ### Ingest fixture
-POST http://localhost:3000/kb/ingest?tenantId={{TENANT_ID}}
+POST http://localhost:3000/api/kb/ingest?tenantId={{TENANT_ID}}
 
 ### Search
-GET http://localhost:3000/kb/search?q=opening%20hours&tenantId={{TENANT_ID}}
+GET http://localhost:3000/api/kb/search?q=opening%20hours&tenantId={{TENANT_ID}}
 
 ### WhatsApp inbound – FAQ
-POST http://localhost:3000/channels/wa/inbound
+POST http://localhost:3000/api/channels/wa/inbound
 Content-Type: application/json
 
 { "tenantId": "{{TENANT_ID}}", "from": "+971500000000", "text": "What are your opening hours?" }
 
 ### WhatsApp inbound – Booking
-POST http://localhost:3000/channels/wa/inbound
+POST http://localhost:3000/api/channels/wa/inbound
 Content-Type: application/json
 
 { "tenantId": "{{TENANT_ID}}", "from": "+971500000001", "text": "I'd like a 60m massage tomorrow after 3pm" }
 
 ### WhatsApp inbound – Payment
-POST http://localhost:3000/channels/wa/inbound
+POST http://localhost:3000/api/channels/wa/inbound
 Content-Type: application/json
 
 { "tenantId": "{{TENANT_ID}}", "from": "+971500000002", "text": "Can I pay a deposit now?" }
+
+### Invoice send
+POST http://localhost:3000/api/invoices/{{INVOICE_ID}}/send
+
+### Invoice mark paid
+POST http://localhost:3000/api/invoices/{{INVOICE_ID}}/mark-paid
