@@ -20,7 +20,7 @@ describe("Payment flow", () => {
 
     const req = new Request("http://localhost/api/channels/wa/inbound", {
       method: "POST",
-      headers: { "contnet-type": "application/json" },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
         tenantId: t.id,
         from: "+971500000002",

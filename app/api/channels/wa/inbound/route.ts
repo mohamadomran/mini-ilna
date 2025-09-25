@@ -37,7 +37,7 @@ function extractService(text: string): string {
   if (t.includes("massage")) return "massage";
   if (t.includes("facial")) return "facial";
   if (t.includes("hair")) return "hair";
-  if (t.includes("appoinment")) return "appoinment";
+  if (t.includes("appointment")) return "appointment";
 
   return "general service";
 }
