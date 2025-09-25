@@ -3,8 +3,11 @@
 import { FormEvent, useState } from "react";
 import { createTenantAction } from "./actions";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 
 export default function OnboardPage() {
+  const locale = useLocale();
+  const t = useTranslations("onboard");
   const [status, setStatus] = useState<
     "idle" | "submitting" | "done" | "error"
   >("idle");
@@ -32,40 +35,37 @@ export default function OnboardPage() {
 
   return (
     <div className="max-w-2xl ">
-      <h1 className="text-2xl font-semibold">Onboard a business</h1>
-      <p className="text-sm text-slate-500">
-        Fill in the details. On submit we create a tenant and kick off ingestion
-        from the included fixture.
-      </p>
+      <h1 className="text-2xl font-semibold">{t("title")}</h1>
+      <p className="text-sm text-slate-500">{t("description")}</p>
 
       <form onSubmit={onSubmit} className="card-space-y-4">
         <div className="mt-4 mb-4">
-          <label className="block text-md mb-4">Business Name</label>
+          <label className="block text-md mb-4">{t("fields.name.label")}</label>
           <input
             name="name"
             className="input"
-            placeholder="Serenity Spa"
+            placeholder={t("fields.name.placeholder")}
             required
           />
         </div>
 
         <div className="mt-4 mb-4">
-          <label className="block text-md mb-4">Contact Email</label>
+          <label className="block text-md mb-4">{t("fields.email.label")}</label>
           <input
             name="email"
             type="email"
             className="input"
-            placeholder="owner@example.com"
+            placeholder={t("fields.email.placeholder")}
             required
           />
         </div>
 
         <div className="mt-4 mb-4">
-          <label className="block text-md mb-4">Website URL</label>
+          <label className="block text-md mb-4">{t("fields.website.label")}</label>
           <input
             name="website"
             className="input"
-            placeholder="https://serenity.example"
+            placeholder={t("fields.website.placeholder")}
             required
           />
         </div>
@@ -75,26 +75,32 @@ export default function OnboardPage() {
             className="btn btn-priamry"
             disabled={status === "submitting"}
           >
-            {status === "submitting" ? "Creating..." : "Create Tenant"}
+            {status === "submitting"
+              ? t("actions.submit.loading")
+              : t("actions.submit.idle")}
           </button>
           <span className="text-xs text-slate-500">
-            This will also start data ingestion
+            {t("actions.submit.hint")}
           </span>
         </div>
 
         {status === "done" && tenantId && (
           <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-300">
-            Ingestion started for <code className="font-mono">{tenantId}</code>
-            <Link href={`/bookings?tenantId=${tenantId}`} className="underline">
+            {t("success.message")}{" "}
+            <code className="font-mono">{tenantId}</code>
+            <Link
+              href={`/${locale}/bookings?tenantId=${tenantId}`}
+              className="underline"
+            >
               {" "}
-              Go to Bookings
+              {t("success.cta")}
             </Link>
           </div>
         )}
 
         {status === "error" && err && (
           <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
-            {err}
+            {err || t("error.generic")}
           </div>
         )}
       </form>

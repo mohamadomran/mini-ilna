@@ -1,0 +1,121 @@
+{
+  "app": {
+    "title": "Mini-ilna"
+  },
+  "nav": {
+    "onboard": "Onboard",
+    "bookings": "Bookings"
+  },
+  "chat": {
+    "title": "Chat simulator",
+    "placeholder": "Type a message… e.g. \"Can I pay a deposit now?\"",
+    "samples": {
+      "faq": "What are your opening hours?",
+      "booking": "I'd like a 60m massage tomorrow after 3pm",
+      "payment": "Can I pay a deposit now with my card?"
+    },
+    "emptyState": {
+      "prefix": "Try:"
+    },
+    "quietHoursLabel": "Quiet hours",
+    "markPaid": "Mark paid",
+    "send": "Send",
+    "sending": "Sending…"
+  },
+  "bookings": {
+    "title": "Bookings",
+    "header": {
+      "summary": "{tenantLabel}: {tenant} • {kb}",
+      "tenantLabel": "Tenant",
+      "noTenant": "None selected",
+      "kbCount": "{count, plural, one {# KB chunk} other {# KB chunks}}"
+    },
+    "actions": {
+      "reingest": "Re-ingest"
+    },
+    "directory": {
+      "tenants": {
+        "title": "Tenants",
+        "empty": "No tenants yet. Go to <link>Onboard</link> to add one.",
+        "count": "{count, plural, one {# booking} other {# bookings}}",
+        "open": "Open"
+      },
+      "recent": {
+        "title": "Recent bookings",
+        "empty": "No bookings yet.",
+        "unknownTenant": "Unknown tenant",
+        "view": "View",
+        "hint": "Selecting a booking jumps to its row in the tenant view."
+      }
+    },
+    "tables": {
+      "bookings": {
+        "title": "Bookings",
+        "headers": {
+          "start": "Start",
+          "service": "Service",
+          "customer": "Customer",
+          "created": "Created",
+          "action": "Action"
+        },
+        "empty": "No bookings yet. Use the chat above to create one.",
+        "sendPaylink": "Send paylink",
+        "amountLabel": "Amount",
+        "hint": "“Send paylink” creates a pending invoice and flips it to <bold>sent</bold>."
+      },
+      "invoices": {
+        "title": "Invoices",
+        "headers": {
+          "created": "Created",
+          "customer": "Customer",
+          "amount": "Amount",
+          "status": "Status",
+          "paylink": "Paylink",
+          "action": "Action"
+        },
+        "empty": "No invoices yet.",
+        "openLink": "open",
+        "send": "Send",
+        "markPaid": "Mark paid",
+        "hint": "The “open” link returns to this page anchored on the invoice row. “Mark paid” sets status to <bold>paid</bold>."
+      }
+    },
+    "status": {
+      "pending": "pending",
+      "sent": "sent",
+      "paid": "paid"
+    }
+  },
+  "onboard": {
+    "title": "Onboard a business",
+    "description": "Fill in the details. On submit we create a tenant and kick off ingestion from the included fixture.",
+    "fields": {
+      "name": {
+        "label": "Business Name",
+        "placeholder": "Serenity Spa"
+      },
+      "email": {
+        "label": "Contact Email",
+        "placeholder": "owner@example.com"
+      },
+      "website": {
+        "label": "Website URL",
+        "placeholder": "https://serenity.example"
+      }
+    },
+    "actions": {
+      "submit": {
+        "idle": "Create Tenant",
+        "loading": "Creating...",
+        "hint": "This will also start data ingestion"
+      }
+    },
+    "success": {
+      "message": "Ingestion started for",
+      "cta": "Go to Bookings"
+    },
+    "error": {
+      "generic": "Something went wrong. Please try again."
+    }
+  }
+}

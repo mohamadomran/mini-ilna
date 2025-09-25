@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 type BotType = "faq" | "booking" | "payment" | "quiet";
 
@@ -17,6 +18,7 @@ type Message =
 
 export default function Chat({ tenantId }: { tenantId: string }) {
   const router = useRouter();
+  const t = useTranslations("chat");
   const [from, setFrom] = useState("+971500000001");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -135,9 +137,9 @@ export default function Chat({ tenantId }: { tenantId: string }) {
       >
         {messages.length === 0 && (
           <p className="text-xs text-slate-500">
-            Try: <code className="font-mono">What are your opening hours?</code>{" "}
-            • <code className="font-mono">60m massage tomorrow after 3pm</code>{" "}
-            • <code className="font-mono">Can I pay a deposit now?</code>
+            {t("emptyState.prefix")} <code className="font-mono">{t("samples.faq")}</code>{" "}
+            • <code className="font-mono">{t("samples.booking")}</code>{" "}
+            • <code className="font-mono">{t("samples.payment")}</code>
           </p>
         )}
 
@@ -164,7 +166,7 @@ export default function Chat({ tenantId }: { tenantId: string }) {
                 {/* Quiet-hours label */}
                 {isQuiet && (
                   <div className="mb-1 text-xs font-medium flex items-center gap-1">
-                    <span aria-hidden>⚠️</span> Quiet hours
+                    <span aria-hidden>⚠️</span> {t("quietHoursLabel")}
                   </div>
                 )}
 
@@ -189,7 +191,7 @@ export default function Chat({ tenantId }: { tenantId: string }) {
                         onClick={() => markPaid(m.invoiceId)}
                         type="button"
                       >
-                        Mark paid
+                        {t("markPaid")}
                       </button>
                     )}
                   </div>
@@ -203,20 +205,20 @@ export default function Chat({ tenantId }: { tenantId: string }) {
       <div className="mt-3 flex gap-2">
         <input
           className="input flex-1"
-          placeholder='Type a message… e.g. "Can I pay a deposit now?"'
+          placeholder={t("placeholder")}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
         />
         <button className="btn btn-primary" onClick={send} disabled={sending}>
-          {sending ? "Sending…" : "Send"}
+          {sending ? t("sending") : t("send")}
         </button>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2">
-        <Quick fill="What are your opening hours?" />
-        <Quick fill="I'd like a 60m massage tomorrow after 3pm" />
-        <Quick fill="Can I pay a deposit now with my card?" />
+        <Quick fill={t("samples.faq")} />
+        <Quick fill={t("samples.booking")} />
+        <Quick fill={t("samples.payment")} />
       </div>
     </div>
   );
