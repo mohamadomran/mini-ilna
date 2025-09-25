@@ -46,4 +46,25 @@ describe("GET /api/kb/search", () => {
 
     expect(results[0].text.toLowerCase()).toContain("opening hours");
   });
+
+  it("returns an empty array when tenant has no knowledge", async () => {
+    const tenant = await prisma.tenants.create({
+      data: {
+        name: "Blank",
+        email: `blank-${Date.now()}@test.local`,
+        website: `https://blank-${Date.now()}.example`,
+      },
+    });
+
+    const request = new Request(
+      `http://localhost/api/kb/search?q=anything&tenantId=${tenant.id}`
+    );
+
+    const response = await searchHandler(request);
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(0);
+  });
 });
