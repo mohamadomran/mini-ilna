@@ -6,6 +6,7 @@ import {
   simulateInbound,
   markInvoicePaid,
 } from "./actions";
+import Chat from "./Chat";
 
 type SearchParams = { tenantId?: string };
 
@@ -17,14 +18,87 @@ export default async function BookingsPage({
   const { tenantId } = await searchParams;
 
   if (!tenantId) {
+    // Load a compact directory view when no tenantId is provided
+    const [tenants, recentBookings] = await Promise.all([
+      prisma.tenants.findMany({
+        orderBy: { created_at: "desc" },
+        select: { id: true, name: true, website: true, created_at: true },
+      }),
+      prisma.bookings.findMany({
+        orderBy: { created_at: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          service: true,
+          start_time: true,
+          customer_phone: true,
+          created_at: true,
+          tenant: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+
+    // Precompute counts (cheap on SQLite w/ small data; if you’d like, replace with a single GROUP BY query)
+    const counts = Object.fromEntries(
+      await Promise.all(
+        tenants.map(async (t) => {
+          const c = await prisma.bookings.count({ where: { tenant_id: t.id } });
+          return [t.id, c] as const;
+        })
+      )
+    );
+
     return (
-      <div className="max-w-3xl space-y-4 mx-auto">
-        <h1 className="text-2xl font-semibold">Bookings</h1>
+      <div className="max-w-5xl w-3xl space-y-8 mx-auto">
+        <header className="flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Bookings</h1>
+            <p className="text-sm text-slate-500">
+              Pick a tenant to view and manage its bookings.
+            </p>
+          </div>
+        </header>
+
+        {/* Tenants directory */}
         <div className="card">
-          <p className="text-sm text-slate-500">
-            Provide <code className="font-mono">?tenantId=…</code> in the URL to
-            view data.
-          </p>
+          <h2 className="font-medium mb-3">Tenants</h2>
+          {tenants.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No tenants yet. Go to{" "}
+              <a href="/onboard" className="underline">
+                Onboard
+              </a>{" "}
+              to add one.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {tenants.map((t) => (
+                <li
+                  key={t.id}
+                  className="py-3 flex items-center justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{t.name}</div>
+                    <div className="text-xs text-slate-500 truncate">
+                      {t.website}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500">
+                      {counts[t.id] ?? 0} booking
+                      {(counts[t.id] ?? 0) === 1 ? "" : "s"}
+                    </span>
+                    <a
+                      className="btn btn-primary"
+                      href={`/bookings?tenantId=${t.id}`}
+                    >
+                      Open
+                    </a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     );
@@ -68,37 +142,7 @@ export default async function BookingsPage({
           </p>
         </div>
       </header>
-
-      {/* WhatsApp-like simulator */}
-      <div className="card">
-        <h2 className="font-medium mb-3">WhatsApp simulator</h2>
-        <form
-          action={simulateInbound}
-          className="flex flex-wrap gap-2 items-center"
-        >
-          <input type="hidden" name="tenantId" value={tenantId} />
-          <input type="hidden" name="returnTo" value={returnTo} />
-          <input
-            name="from"
-            placeholder="+9715…"
-            className="input w-48"
-            required
-          />
-          <input
-            name="text"
-            placeholder='Try: "What are your opening hours?" or "60m massage tomorrow after 3pm" or "Can I pay a deposit now?"'
-            className="input flex-1 min-w-[18rem]"
-            required
-          />
-          <button className="btn btn-primary" type="submit">
-            Send
-          </button>
-        </form>
-        <p className="text-xs text-slate-500 mt-2">
-          Posts to <code className="font-mono">/api/channels/wa/inbound</code>,
-          which may create a booking or invoice depending on your text.
-        </p>
-      </div>
+      <Chat tenantId={tenantId} />
 
       {/* Bookings table */}
       <div className="card overflow-x-auto">

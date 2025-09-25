@@ -25,39 +25,37 @@ export function htmlToText(html: string): string {
     "article",
     "div",
   ]);
-
   root.querySelectorAll("*").forEach((el) => {
-    const tag = el.tagName.toLowerCase();
-
+    const tag = el.tagName?.toLowerCase?.();
     if (tag && blocks.has(tag)) {
       el.insertAdjacentHTML("beforebegin", "\n");
       el.insertAdjacentHTML("afterend", "\n");
     }
   });
 
-  let text = root.text.replace(/\u00A0/g, ""); // removes every non-breaking space
-  text = text.replace(/[ \t]+\n/g, "\n"); // collapses any run of spaces or tabs that sits right before a newline down to the newline alone
-  text = text.replace(/\n{3,}/g, "\n\n"); // shortens any blockof three or more consecutive lines to exactly 2, limits vertical gaps
-  text = text.replace(/[ \t]{2,}/g, " "); // replaces stretches of two or more spaces/tabs inside a line with a single regular space
+  // Normalize whitespace
+  let text = root.text
+    .replace(/\u00A0/g, " ") // nbsp -> space
+    .replace(/[ \t]+\n/g, "\n") // trim spaces before newline
+    .replace(/\n{3,}/g, "\n\n") // collapse tall gaps
+    .replace(/[ \t]{2,}/g, " "); // collapse intra-line runs
   return text.trim();
 }
 
-const intoParagraphs = (text: string): string[] => {
-  return text
+const intoParagraphs = (text: string): string[] =>
+  text
     .split(/\n{2,}/g)
     .map((s) => s.trim())
     .filter(Boolean);
-};
 
-// break paragraphs into sentences whenever it sees punctuatuin that usually ends a sentence/followed by a whitespace/followed by start of what it looks like a new sentence
-const intoSentences = (paragraph: string): string[] => {
-  return paragraph
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/g)
+// Split on sentence enders, keep Unicode initials
+const intoSentences = (paragraph: string): string[] =>
+  paragraph
+    .split(/(?<=[.!?])\s+(?=[\p{L}(0-9])/u)
     .map((s) => s.trim())
     .filter(Boolean);
-};
 
-// Pack sentences into chunks ~maxChars with overlap, avoid tiny fragments.
+// Pack sentences into ~maxChars with overlap
 export function splitIntoChunks(
   text: string,
   maxChars = 700,
@@ -66,9 +64,7 @@ export function splitIntoChunks(
   const minChars = opts?.minChars ?? Math.floor(maxChars * 0.5);
   const overlapChars = opts?.overlapChars ?? Math.floor(maxChars * 0.15);
 
-  const paragraphs = intoParagraphs(text);
-  const sentences = paragraphs.flatMap(intoSentences);
-
+  const sentences = intoParagraphs(text).flatMap(intoSentences);
   const chunks: string[] = [];
   let buf: string[] = [];
   let len = 0;
@@ -89,13 +85,13 @@ export function splitIntoChunks(
       continue;
     }
     if (len < minChars && !buf.length) {
-      // very long sentence—emit alone
       chunks.push(sentence);
       continue;
     }
 
     flush();
 
+    // Overlap tail from previous chunk
     if (overlapChars > 0 && chunks.length > 0) {
       const prev = chunks[chunks.length - 1];
       const tail = prev.slice(Math.max(0, prev.length - overlapChars));
@@ -109,7 +105,7 @@ export function splitIntoChunks(
 
   flush();
 
-  // merge last tiny chunk if needed
+  // Merge last tiny fragment
   if (chunks.length >= 2) {
     const last = chunks[chunks.length - 1];
     if (last.length < minChars) {
@@ -121,49 +117,55 @@ export function splitIntoChunks(
   return chunks;
 }
 
-// Naive tokenizer + TF
-export const termFreq = (text: string): Record<string, number> => {
-  const stop = new Set([
-    "the",
-    "a",
-    "an",
-    "and",
-    "or",
-    "in",
-    "to",
-    "for",
-    "on",
-    "at",
-    "is",
-    "are",
-    "was",
-    "were",
-    "be",
-    "with",
-    "by",
-    "from",
-    "that",
-    "this",
-    "it",
-    "as",
-    "we",
-    "you",
-    "your",
-    "our",
-    "their",
-    "they",
-    "i",
-  ]);
-
-  const tokens = text
+// Shared tokenizer (Unicode letters + numbers)
+const tokenize = (text: string): string[] =>
+  text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
-    .filter((t) => t && !stop.has(t));
+    .filter(Boolean);
 
-  const tf: Record<string, number> = {};
+// Naive stoplist
+const STOP = new Set([
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "in",
+  "to",
+  "for",
+  "on",
+  "at",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "with",
+  "by",
+  "from",
+  "that",
+  "this",
+  "it",
+  "as",
+  "we",
+  "you",
+  "your",
+  "our",
+  "their",
+  "they",
+  "i",
+]);
 
-  for (const t of tokens) tf[t] = (tf[t] || 0) + 1;
-
+// Build TF with Unicode tokens; downweight pure long numerics
+export const termFreq = (text: string): Record<string, number> => {
+  const tf: Record<string, number> = Object.create(null);
+  for (const tok of tokenize(text)) {
+    // Drop very long number-only tokens (e.g., phone, CSS dumps)
+    if (/^\d{4,}$/.test(tok)) continue;
+    if (STOP.has(tok)) continue;
+    tf[tok] = (tf[tok] ?? 0) + 1;
+  }
   return tf;
 };
