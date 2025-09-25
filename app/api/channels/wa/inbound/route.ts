@@ -3,6 +3,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { rankChunksByTfIdf } from "@/lib/rank";
 import { parseWhen } from "@/lib/when";
+import {
+  loadQuietHoursFromEnv,
+  isWithinQuietHours,
+  buildQuietHoursMessage,
+} from "@/lib/quiet";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const InboundMessageSchema = z.object({
   tenantId: z.string().min(1),
@@ -18,11 +26,12 @@ export function classifyText(input: string): InboundKind {
 
   if (/(pay|deposit|card|payment|visa|mastercard)/i.test(s)) return "payment";
   if (
-    /(book|booking|appointm(e|)nt|appt|massage|hair|facial|slot|reserve|schedule)/i.test(
+    /(book|booking|appointment|appt|massage|hair|facial|slot|reserve|schedule)/i.test(
       s
     )
-  )
+  ) {
     return "booking";
+  }
   return "faq";
 }
 
@@ -36,39 +45,43 @@ function truncate(str: string, max = 200): string {
 
 function extractService(text: string): string {
   const t = text.toLowerCase();
+  const minutes = t.match(/\b(\d{1,3})\s*(?:m|min|mins|minute|minutes)\b/);
+  const hours = t.match(/\b(\d{1,2})\s*(?:h|hr|hrs|hour|hours)\b/);
 
-  const minMatch = t.match(/\b(\d{1,3})\s*(m|min|mins|minute|minutes)\b/);
-  const hourMatch = t.match(/\b(\d{1,2})\s*(h|hr|hrs|hour|hours)\b/);
   let normDur: string | null = null;
-
-  if (minMatch) {
-    normDur = `${parseInt(minMatch[1], 10)}m`;
-  } else if (hourMatch) {
-    normDur = `${parseInt(hourMatch[1], 10) * 60}m`;
-  }
+  if (minutes) normDur = `${parseInt(minutes[1], 10)}m`;
+  else if (hours) normDur = `${parseInt(hours[1], 10) * 60}m`;
 
   const has = (re: RegExp) => re.test(t);
 
-  // Service detection (expandable)
   let service: string | null = null;
   if (has(/massage/)) service = "massage";
   else if (has(/facial/)) service = "facial";
-  else if (has(/hair(cut| style| color)?|blow ?dry/)) service = "hair";
+  else if (has(/hair(cut| ?style| ?color)?|blow ?dry/)) service = "hair";
   else if (has(/manicure|pedicure|nails?/)) service = "nails";
   else if (has(/spa|treatment/)) service = "treatment";
-
-  // If user only says "book/booking/appointment…" with no explicit service
-  if (!service && has(/book|booking|appointm(e|)nt|reserve|schedule|slot/)) {
+  else if (
+    has(/(?:^|\s)(book|booking|appointment|appt|reserve|schedule|slot)(?:\s|$)/)
+  )
     service = "appointment";
-  }
 
   if (!service) return "general";
-
   return normDur ? `${normDur} ${service}` : service;
 }
 
 export async function POST(req: Request) {
   let payload: InboundMessage;
+  const quietHoursConfig = loadQuietHoursFromEnv();
+
+  if (isWithinQuietHours(new Date(), quietHoursConfig)) {
+    return NextResponse.json(
+      {
+        type: "quiet",
+        reply: buildQuietHoursMessage(quietHoursConfig),
+      },
+      { status: 200 }
+    );
+  }
 
   try {
     const json = await req.json();
@@ -196,7 +209,7 @@ export async function POST(req: Request) {
         type: "payment",
         invoiceId: invoice.id,
         paylink: invoice.paylink,
-        reply: `You can pay securely here`,
+        reply: `You can pay securely here: ${invoice.paylink}`,
       },
       { status: 200 }
     );
