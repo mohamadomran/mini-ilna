@@ -9,7 +9,7 @@ export function htmlToText(html: string): string {
 
   root
     .querySelectorAll("script,style,meta,nav,footer,header")
-    .forEach((el) => el.remove);
+    .forEach((el) => el.remove());
 
   const blocks = new Set([
     "p",
@@ -52,7 +52,7 @@ const intoParagraphs = (text: string): string[] => {
 // break paragraphs into sentences whenever it sees punctuatuin that usually ends a sentence/followed by a whitespace/followed by start of what it looks like a new sentence
 const intoSentences = (paragraph: string): string[] => {
   return paragraph
-    .split(/(?<=[.!?])\s+(?=[A-Z(0-9])/g)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/g)
     .map((s) => s.trim())
     .filter(Boolean);
 };
@@ -113,9 +113,7 @@ export function splitIntoChunks(
   if (chunks.length >= 2) {
     const last = chunks[chunks.length - 1];
     if (last.length < minChars) {
-      chunks[chunks.length - 2] = `${
-        chunks[chunks.length - 2]
-      } ${last}}`.trim();
+      chunks[chunks.length - 2] = `${chunks[chunks.length - 2]} ${last}`.trim();
       chunks.pop();
     }
   }

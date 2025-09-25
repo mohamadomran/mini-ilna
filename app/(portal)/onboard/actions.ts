@@ -1,30 +1,36 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+type CreateResult = { ok: boolean; id?: string; error?: string };
 
-export async function onboardTenant(input: {
-  name: string;
-  email: string;
-  website: string;
-}) {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/tenants`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-      cache: "no-store",
-    }
-  );
+export async function createTenantAction(
+  formData: FormData
+): Promise<CreateResult> {
+  const name = String(formData.get("name") || "").trim();
+  const email = String(formData.get("email") || "").trim();
+  const website = String(formData.get("website") || "").trim();
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => {});
-    throw new Error(err?.error ?? `Failed to create tenant (${res.status})`);
+  if (!name || !email || !website) {
+    return { ok: false, error: "All fields are required" };
   }
 
-  const { id } = await res.json();
+  const base = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
-  revalidatePath("/(portal)/bookings");
+  try {
+    const res = await fetch(`${base}/api/tenants`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, email, website }),
+      cache: "no-store",
+    });
 
-  return { id };
+    if (!res.ok) {
+      const j = await res.json().catch(() => {});
+      return { ok: false, error: j.error || `Request failed (${res.status})` };
+    }
+
+    const j = (await res.json()) as { id: string };
+    return { ok: true, id: j.id };
+  } catch (e: any) {
+    return { ok: false, error: e.message || "Network error" };
+  }
 }
