@@ -2,12 +2,15 @@ import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ locale: string; id: string }> | { locale: string; id: string };
+};
 
 /** Server action: mark this invoice paid and refresh this page */
 export async function simulatePay(formData: FormData) {
   "use server";
   const id = String(formData.get("id") ?? "");
+  const locale = String(formData.get("locale") ?? "");
   if (!id) return;
 
   // Idempotent-ish: allow pending/sent to flip to paid
@@ -17,11 +20,11 @@ export async function simulatePay(formData: FormData) {
   });
 
   // Re-render this pay page with the new status
-  revalidatePath(`/pay/${id}`);
+  revalidatePath(`/${locale || "en"}/pay/${id}`);
 }
 
 export default async function PayPage({ params }: Props) {
-  const { id } = await params;
+  const { locale, id } = await params;
 
   const invoice = await prisma.invoices.findUnique({
     where: { id },
@@ -86,6 +89,7 @@ export default async function PayPage({ params }: Props) {
         {!paid ? (
           <form action={simulatePay}>
             <input type="hidden" name="id" value={invoice.id} />
+            <input type="hidden" name="locale" value={locale} />
             <button className="btn btn-primary w-full" type="submit">
               Pay now (simulate)
             </button>
@@ -99,7 +103,7 @@ export default async function PayPage({ params }: Props) {
 
       <div className="text-center">
         <Link
-          href={`/bookings?tenantId=${invoice.tenant_id}`}
+          href={`/${locale}/bookings?tenantId=${invoice.tenant_id}`}
           className="underline"
         >
           Back to bookings
