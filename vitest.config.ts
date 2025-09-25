@@ -9,10 +9,14 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    pool: "threads",
+    poolOptions: { threads: { singleThread: true } },
+
+    sequence: { concurrent: false, shuffle: false },
     environment: "node",
     include: ["tests/**/*.test.ts"],
     coverage: {
-      reporter: ["test", "lcov"],
+      reporter: ["text", "lcov"],
     },
   },
 });
