@@ -1,11 +1,20 @@
 import type { kb_chunks } from "@prisma/client";
 
+export function normalizeToken(t: string): string {
+  t = t.replace(/’s$|'s$/i, "");
+  if (t.endsWith("ies")) return t.slice(0, -3) + "y";
+  if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
+
+  return t;
+}
+
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(normalizeToken);
 }
 
 type KnowledgeChunk = Pick<kb_chunks, "id" | "text" | "meta">;

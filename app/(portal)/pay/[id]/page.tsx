@@ -1,4 +1,3 @@
-// app/pay/[id]/page.tsx
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";

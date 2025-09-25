@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 type Message =
   | { role: "user"; text: string }
@@ -13,6 +14,7 @@ type Message =
     };
 
 export default function Chat({ tenantId }: { tenantId: string }) {
+  const router = useRouter();
   const [from, setFrom] = useState("+971500000001");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -40,7 +42,9 @@ export default function Chat({ tenantId }: { tenantId: string }) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tenantId, from, text: user }),
+        cache: "no-store",
       });
+
       const body = await res.json();
       const bot: Message = {
         role: "bot",
@@ -50,9 +54,11 @@ export default function Chat({ tenantId }: { tenantId: string }) {
         paylink: body.paylink,
       };
       setMessages((m) => [...m, bot]);
+
+      router.refresh();
     } catch {
       setMessages((m) => [
-        ...messages,
+        ...m,
         { role: "bot", text: "Error sending message", type: "faq" },
       ]);
     } finally {
@@ -62,23 +68,26 @@ export default function Chat({ tenantId }: { tenantId: string }) {
 
   async function markPaid(id?: string) {
     if (!id) return;
-
-    await fetch(`/api/invoices/${id}/pay`, { method: "POST" });
+    await fetch(`/api/invoices/${id}/pay`, {
+      method: "POST",
+      cache: "no-store",
+    });
     setMessages((m) => [
       ...m,
       { role: "bot", text: "Invoice marked as paid.", type: "payment" },
     ]);
+    router.refresh();
   }
 
   function Quick({ children, fill }: { children: string; fill: string }) {
     return (
       <button
-        onClick={() => setText(children)}
-        className="px-2 py-1 rounded-full text-xs bg-slate-100 hover:bg-slate-200"
         type="button"
-        title="Fill input"
+        onClick={() => setText(fill)}
+        className="px-2 py-1 rounded-full text-xs bg-slate-100 hover:bg-slate-200"
+        title={fill}
       >
-        {fill}
+        {children}
       </button>
     );
   }
@@ -125,7 +134,11 @@ export default function Chat({ tenantId }: { tenantId: string }) {
               {m.role === "bot" && m.type === "payment" && (
                 <div className="mt-2 flex items-center gap-2">
                   {m.paylink && (
-                    <a className="btn btn-secondary btn-xs" href={m.paylink}>
+                    <a
+                      className="btn btn-secondary btn-xs"
+                      href={m.paylink}
+                      target="_blank"
+                    >
                       Open paylink
                     </a>
                   )}

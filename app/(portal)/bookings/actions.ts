@@ -90,3 +90,28 @@ export async function simulateInbound(formData: FormData) {
   revalidatePath("/bookings");
   redirect(returnTo);
 }
+
+export async function reingestTenant(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  if (!tenantId) return;
+  const base = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  await fetch(`${base}/api/kb/ingest?tenantId=${tenantId}`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  revalidatePath("/bookings");
+}
+
+export async function reingestTenantKb(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  if (!tenantId) return;
+
+  const base = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  await fetch(`${base}/api/kb/ingest?tenantId=${tenantId}`, {
+    method: "POST",
+    cache: "no-store",
+  });
+
+  // refresh the page so counts update
+  revalidatePath("/bookings");
+}
