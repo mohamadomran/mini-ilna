@@ -1,14 +1,17 @@
-// app/(portal)/bookings/page.tsx
 import { prisma } from "@/lib/db";
 import {
   createAndSendPaylink,
   sendExistingInvoice,
-  simulateInbound,
+  reingestTenantKb,
   markInvoicePaid,
 } from "./actions";
 import Chat from "./Chat";
 
 type SearchParams = { tenantId?: string };
+
+function fmt(dt: Date) {
+  return dt.toISOString().replace("T", " ").slice(0, 16);
+}
 
 export default async function BookingsPage({
   searchParams,
@@ -16,6 +19,10 @@ export default async function BookingsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { tenantId } = await searchParams;
+
+  const [kbCount] = await Promise.all([
+    prisma.kb_chunks.count({ where: { tenant_id: tenantId } }),
+  ]);
 
   if (!tenantId) {
     // Load a compact directory view when no tenantId is provided
@@ -49,14 +56,21 @@ export default async function BookingsPage({
     );
 
     return (
-      <div className="max-w-5xl w-3xl space-y-8 mx-auto">
+      <div className="max-w-5xl w-5xl space-y-8 mx-auto">
         <header className="flex items-end justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Bookings</h1>
             <p className="text-sm text-slate-500">
-              Pick a tenant to view and manage its bookings.
+              Tenant: <code className="font-mono">{tenantId}</code>{" "}
+              <span className="ml-2">• KB chunks: {kbCount}</span>
             </p>
           </div>
+          <form action={reingestTenantKb}>
+            <input type="hidden" name="tenantId" value={tenantId} />
+            <button type="submit" className="btn btn-secondary">
+              Re-ingest
+            </button>
+          </form>
         </header>
 
         {/* Tenants directory */}
@@ -100,6 +114,42 @@ export default async function BookingsPage({
             </ul>
           )}
         </div>
+
+        <div className="card">
+          <h2 className="font-medium mb-3">Recent bookings</h2>
+          {recentBookings.length === 0 ? (
+            <p className="text-sm text-slate-500">No bookings yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {recentBookings.map((b) => (
+                <li
+                  key={b.id}
+                  className="py-3 flex items-center justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">
+                      {b.tenant?.name ?? "Unknown tenant"}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {b.service} • {fmt(b.start_time)} • {b.customer_phone}
+                    </div>
+                  </div>
+                  <a
+                    className="btn"
+                    href={`/bookings?tenantId=${b.tenant?.id ?? ""}#booking-${
+                      b.id
+                    }`}
+                  >
+                    View
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-slate-500 mt-3">
+            Selecting a booking jumps to its row in the tenant view.
+          </p>
+        </div>
       </div>
     );
   }
@@ -133,7 +183,7 @@ export default async function BookingsPage({
   const returnTo = `/bookings?tenantId=${tenantId}`;
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-5xl w-5xl mx-auto">
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Bookings</h1>
@@ -161,23 +211,20 @@ export default async function BookingsPage({
             {bookings.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-6 text-slate-500">
-                  No bookings yet. Use the simulator above to create one.
+                  No bookings yet. Use the chat above to create one.
                 </td>
               </tr>
             )}
             {bookings.map((b) => (
               <tr
                 key={b.id}
+                id={`booking-${b.id}`}
                 className="border-t border-slate-100 dark:border-slate-800"
               >
-                <td className="py-3 pr-4 font-mono">
-                  {b.start_time.toISOString().replace("T", " ").slice(0, 16)}
-                </td>
+                <td className="py-3 pr-4 font-mono">{fmt(b.start_time)}</td>
                 <td className="py-3 pr-4">{b.service}</td>
                 <td className="py-3 pr-4">{b.customer_phone}</td>
-                <td className="py-3 pr-4 font-mono">
-                  {b.created_at.toISOString().replace("T", " ").slice(0, 16)}
-                </td>
+                <td className="py-3 pr-4 font-mono">{fmt(b.created_at)}</td>
                 <td className="py-3 pr-4">
                   <form
                     action={createAndSendPaylink}
@@ -240,9 +287,7 @@ export default async function BookingsPage({
                 id={`invoice-${inv.id}`}
                 className="border-t border-slate-100 dark:border-slate-800"
               >
-                <td className="py-3 pr-4 font-mono">
-                  {inv.created_at.toISOString().replace("T", " ").slice(0, 16)}
-                </td>
+                <td className="py-3 pr-4 font-mono">{fmt(inv.created_at)}</td>
                 <td className="py-3 pr-4">{inv.customer_phone}</td>
                 <td className="py-3 pr-4">{inv.amount} AED</td>
                 <td className="py-3 pr-4">
@@ -258,7 +303,20 @@ export default async function BookingsPage({
                     {inv.status}
                   </span>
                 </td>
-
+                <td className="py-3 pr-4">
+                  {inv.paylink ? (
+                    <a
+                      href={inv.paylink}
+                      className="underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      open
+                    </a>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
                 <td className="py-3 pr-4">
                   {inv.status === "paid" ? (
                     <span className="text-slate-400">—</span>

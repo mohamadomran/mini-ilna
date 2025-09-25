@@ -1,8 +1,12 @@
 import { parse } from "node-html-parser";
+import { normalizeToken } from "./rank";
 
 // Convert raw HTML to clean text
 export function htmlToText(html: string): string {
-  const root = parse(html, {
+  // 1) kill doctype early so it never lands in text
+  const cleaned = html.replace(/^<!doctype[^>]*>/i, "");
+
+  const root = parse(cleaned, {
     comment: false,
     blockTextElements: { script: true, style: true },
   });
@@ -11,35 +15,19 @@ export function htmlToText(html: string): string {
     .querySelectorAll("script,style,meta,nav,footer,header")
     .forEach((el) => el.remove());
 
-  const blocks = new Set([
-    "p",
-    "li",
-    "ul",
-    "ol",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "section",
-    "article",
-    "div",
-  ]);
-  root.querySelectorAll("*").forEach((el) => {
-    const tag = el.tagName?.toLowerCase?.();
-    if (tag && blocks.has(tag)) {
-      el.insertAdjacentHTML("beforebegin", "\n");
-      el.insertAdjacentHTML("afterend", "\n");
-    }
-  });
+  // prefer structured/inner text if available
+  // @ts-ignore
+  let text: string = root.structuredText ?? root.innerText ?? root.text ?? "";
 
-  // Normalize whitespace
-  let text = root.text
-    .replace(/\u00A0/g, " ") // nbsp -> space
-    .replace(/[ \t]+\n/g, "\n") // trim spaces before newline
-    .replace(/\n{3,}/g, "\n\n") // collapse tall gaps
-    .replace(/[ \t]{2,}/g, " "); // collapse intra-line runs
-  return text.trim();
+  // normalize entities/dashes (helps tokenize times, ranges)
+  text = text.replace(/&nbsp;/gi, " ").replace(/&(ndash|mdash);/gi, "-");
+
+  // whitespace cleanup
+  return text
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 const intoParagraphs = (text: string): string[] =>
@@ -158,11 +146,16 @@ const STOP = new Set([
   "i",
 ]);
 
-// Build TF with Unicode tokens; downweight pure long numerics
 export const termFreq = (text: string): Record<string, number> => {
   const tf: Record<string, number> = Object.create(null);
-  for (const tok of tokenize(text)) {
-    // Drop very long number-only tokens (e.g., phone, CSS dumps)
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(normalizeToken);
+
+  for (const tok of tokens) {
     if (/^\d{4,}$/.test(tok)) continue;
     if (STOP.has(tok)) continue;
     tf[tok] = (tf[tok] ?? 0) + 1;
