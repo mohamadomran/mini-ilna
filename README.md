@@ -7,7 +7,8 @@ Demonstrates end-to-end ownership of the stack:
 - Website ingestion from fixture HTML
 - FAQ retrieval via TF-IDF
 - WhatsApp-like chat for bookings & payments
-- Bookings and Invoices portal
+- Bookings & Invoices portal
+- Quiet Hours
 
 ---
 
@@ -15,84 +16,73 @@ Demonstrates end-to-end ownership of the stack:
 
 ✅ **Tenant onboarding**
 
-- Simple form: `name`, `email`, `website`.
-- Creates a tenant row in DB.
-- Immediately kicks off ingestion from `fixtures/website.html`.
+- One form: `name`, `email`, `website`
+- Persists tenant, immediately kicks off ingestion from `fixtures/website.html`
 
 ✅ **Knowledge ingestion**
 
-- Reads static fixture HTML (`fixtures/website.html`).
-- Converts to clean text, splits into ~700-character overlapping chunks.
-- Stores chunks + per-chunk term frequencies (`meta.tf`) in `kb_chunks`.
-- Provides `/api/kb/ingest` and `/api/kb/search`.
+- Parses fixture HTML → clean text
+- Splits into ~700-char overlapping chunks (+ small overlap to preserve context)
+- Stores per-chunk term frequencies at `kb_chunks.meta.tf`
+- Endpoints: `/api/kb/ingest`, `/api/kb/search`
 
 ✅ **Retrieval**
 
-- Uses a lightweight TF-IDF-like ranking (`rankChunksByTfIdf`).
-- `/api/kb/search?q=…&tenantId=…` returns top 3 relevant passages with scores.
+- Lightweight TF-IDF ranker (`rankChunksByTfIdf`)
+- `GET /api/kb/search?q=…&tenantId=…` → top 3 passages with scores
 
-✅ **WhatsApp inbound simulation**
+✅ **WhatsApp-like inbound**
 
-- `POST /api/channels/wa/inbound` accepts `{ tenantId, from, text }`.
-- Classifies text into **FAQ | booking | payment** using regexes.
-- Behaviors:
-  - **FAQ** → returns best KB passage (≤200 chars) with `chunkId`.
-  - **Booking** → parses time via `parseWhen()`, stores booking row, returns ISO time.
-  - **Payment** → creates invoice, sets `status=pending`, attaches fake paylink, returns paylink.
+- `POST /api/channels/wa/inbound` with `{ tenantId, from, text }`
+- Regex classifier → **faq | booking | payment**
+  - **FAQ** → best passage (≤200 chars) + `chunkId`
+  - **Booking** → parses time (`parseWhen`) & service name, creates booking, returns ISO time + human message
+  - **Payment** → creates invoice (`pending`), attaches fake paylink, returns paylink
+- **Quiet Hours**: if enabled, replies with a configurable message instead of acting
 
-✅ **Bookings portal**
+✅ **Portal**
 
-- `/bookings?tenantId=…`
-- Shows:
-  - **Chat simulator** (WhatsApp-like, stateful, quick buttons for FAQ/Booking/Payment).
-  - **Bookings table** (upcoming bookings with service, start, customer).
-  - **Invoices table** (invoices with status: pending, sent, paid).
-- Server Actions allow:
-  - Create + send paylink
-  - Re-send existing invoice
-  - Mark invoice as paid
-  - Re-ingest KB chunks for a tenant
-
-✅ **Paylink simulation**
-
-- `/pay/:id` page displays invoice details.
-- "Pay now (simulate)" flips invoice status → `paid` and shows success message.
+- `/onboard` — create a tenant, auto-ingest KB
+- `/bookings?tenantId=…` — the control center:
+  - **Chat simulator** (WhatsApp-like) with quick prompts
+  - **Bookings table** (start, service, phone, created)
+  - **Invoices table** (amount, status: pending/sent/paid, paylink)
+  - **Actions**: send/re-send paylink, mark paid, re-ingest KB
+- `/pay/:id` — simple pay page; “Pay now” flips status → `paid`
 
 ---
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15, App Router, TailwindCSS
-- **Backend:** Next.js server actions, REST endpoints
-- **Database:** SQLite with Prisma ORM
-- **Testing:** Vitest for API tests (`tests/wa.booking.api.test.ts`, etc.)
-- **Styling:** Tailwind utility classes + minimal UI components
+- **Frontend:** Next.js 15 (App Router), TailwindCSS
+- **Backend:** Next.js Route Handlers + Server Actions
+- **DB:** SQLite (Prisma)
+- **Tests:** Vitest (API happy-path tests)
+- **Styling:** Tailwind utility classes + tiny design system (buttons, inputs, cards)
 
 ---
 
-## Data Model
-
-Tables in `prisma/schema.prisma`:
+## Data Model (Prisma)
 
 ```prisma
 model tenants {
-  id        String   @id @default(cuid())
-  name      String
-  email     String
-  website   String   @unique
-  created_at DateTime @default(now())
+  id         String     @id @default(cuid())
+  name       String
+  email      String
+  website    String     @unique
+  created_at DateTime   @default(now())
   bookings   bookings[]
   invoices   invoices[]
   kb_chunks  kb_chunks[]
 }
 
 model kb_chunks {
-  id        String   @id @default(cuid())
-  tenant_id String
-  text      String
-  meta      Json
+  id         String   @id @default(cuid())
+  tenant_id  String
+  text       String
+  meta       Json
   created_at DateTime @default(now())
-  tenant    tenants @relation(fields: [tenant_id], references: [id])
+  tenant     tenants  @relation(fields: [tenant_id], references: [id])
 }
 
 model bookings {
@@ -103,7 +93,7 @@ model bookings {
   customer_phone String
   source         String
   created_at     DateTime @default(now())
-  tenant         tenants @relation(fields: [tenant_id], references: [id])
+  tenant         tenants  @relation(fields: [tenant_id], references: [id])
 }
 
 model invoices {
@@ -111,11 +101,11 @@ model invoices {
   tenant_id      String
   amount         Int
   currency       String
-  status         String
+  status         String   // pending | sent | paid | quiet
   paylink        String
   customer_phone String
   created_at     DateTime @default(now())
-  tenant         tenants @relation(fields: [tenant_id], references: [id])
+  tenant         tenants  @relation(fields: [tenant_id], references: [id])
 }
 ```
 
@@ -126,20 +116,22 @@ model invoices {
 ### Tenants
 
 - `POST /api/tenants` → `{ id }`
+  Triggers ingestion for that tenant.
 
-### Knowledge base
+### Knowledge Base
 
 - `POST /api/kb/ingest?tenantId=…` → `{ chunks: n }`
-- `GET /api/kb/search?q=…&tenantId=…` → `[{ id, text, score }]`
+- `GET  /api/kb/search?q=…&tenantId=…` → `[{ id, text, score }]`
 
-### WhatsApp inbound
+### WhatsApp Inbound
 
 - `POST /api/channels/wa/inbound`
-  - Input: `{ tenantId, from, text }`
-  - Output depends on intent:
+  - **Input:** `{ tenantId, from, text }`
+  - **Output:**
     - FAQ → `{ type: "faq", reply, chunkId }`
     - Booking → `{ type: "booking", bookingId, start, reply }`
     - Payment → `{ type: "payment", invoiceId, paylink, reply }`
+    - Quiet → `{ type: "quiet", reply }`
 
 ### Invoices
 
@@ -148,18 +140,21 @@ model invoices {
 
 ---
 
-## Portal Pages
+## Quiet Hours
 
-- `/onboard`
-  - Form for tenant creation
-  - Auto-triggers ingestion from fixture
-- `/bookings?tenantId=…`
-  - Chat simulator
-  - Bookings table
-  - Invoices table
-  - Re-ingest button
-- `/pay/:id`
-  - Invoice detail + simulate payment
+Optional throttle that defers replies during certain local hours.
+
+**Env vars:**
+
+```
+QUIET_HOURS_ENABLED=true
+QUIET_HOURS_START=20:00        # 24h format
+QUIET_HOURS_END=08:00
+QUIET_HOURS_TZ=Asia/Dubai      # IANA timezone
+```
+
+- When active, `/api/channels/wa/inbound` returns `{ type: "quiet", reply }` without creating bookings or invoices.
+- To test different timezones, change `QUIET_HOURS_TZ` and restart dev server.
 
 ---
 
@@ -169,95 +164,97 @@ model invoices {
 # Install deps
 pnpm install
 
-# Run migrations (creates prisma/dev.db)
+# Create DB + run migrations (prisma/dev.db)
 pnpm db:migrate
 
-# (Optional) reset database
+# (Optional) reset DB from scratch
 rm -f prisma/dev.db && pnpm db:migrate
 
 # Start dev server
 pnpm dev
 ```
 
-Visit: [http://localhost:3000/onboard](http://localhost:3000/onboard)
+Visit:
+
+- Onboarding: http://localhost:3000/onboard
+- Portal: http://localhost:3000/bookings?tenantId=…
+
+> Tip: After onboarding, the page shows the new tenant ID. Use it in the `/bookings` URL.
 
 ---
 
 ## Usage Flow
 
-1. **Onboard a tenant**
+1. **Onboard**
 
-   - Fill name/email/website
-   - Ingestion runs automatically
+   - Fill out the form, submit → ingestion runs from `fixtures/website.html`.
 
-2. **Chat simulator**
+2. **Chat**
 
-   - Open `/bookings?tenantId=…`
-   - Send prompts:
-     - `"What are your opening hours?"` → FAQ reply from KB
-     - `"I'd like a 60m massage tomorrow after 3pm"` → Creates booking
-     - `"Can I pay a deposit now?"` → Creates invoice + paylink
+   - Go to `/bookings?tenantId=…`
+   - Try:
+     - `What are your opening hours?` → FAQ passage
+     - `I'd like a 60m massage tomorrow after 3pm` → booking
+     - `Can I pay a deposit now?` → paylink
 
-3. **Bookings table**
+3. **Bookings / Invoices**
 
-   - See your new booking row
+   - New booking appears instantly (Chat triggers `router.refresh()`).
+   - Create/send paylinks; mark invoices as paid.
+   - Re-ingest KB with one click.
 
-4. **Invoices table**
+4. **Pay Page**
+   - Open paylink → `/pay/:id` → “Pay now” flips status to `paid`.
 
-   - Shows pending/sent invoices
-   - Buttons: "Send", "Mark paid"
-   - Clicking paylink opens `/pay/:id`
+---
 
-5. **Pay simulation**
-   - `/pay/:id` → press "Pay now"
-   - Invoice marked as `paid`
+## Sample cURL
+
+```bash
+# Create tenant
+curl -s -X POST http://localhost:3000/api/tenants   -H 'content-type: application/json'   -d '{"name":"Serenity Spa","email":"owner@serenity.local","website":"https://serenity.example"}'
+
+# Ingest KB
+curl -s "http://localhost:3000/api/kb/ingest?tenantId=<TENANT_ID>"
+
+# Ask a question
+curl -s -X POST http://localhost:3000/api/channels/wa/inbound   -H 'content-type: application/json'   -d '{"tenantId":"<TENANT_ID>","from":"+971500000001","text":"What are your opening hours?"}'
+```
 
 ---
 
 ## Tests
 
-Run vitest tests:
-
 ```bash
 pnpm test
 ```
 
-Core tests include:
+Covers:
 
-- **FAQ flow**: retrieval of passage
-- **Booking flow**: booking row creation, ISO start time ~tomorrow 15–18h
-- **Payment flow**: invoice creation, send, paylink correctness
-
----
-
-## Design Notes & Tradeoffs
-
-- **Clarity > completeness**
-  Time-boxed (6–8h). Minimal but end-to-end.
-- **Ingestion heuristic**
-  Basic HTML → text → 700-char chunks. Works on fixture, not robust to arbitrary web.
-- **Ranking**
-  TF-IDF-ish scoring; enough to retrieve relevant snippets from fixture.
-- **Regex intent detection**
-  Simple rules: `/(pay|deposit|card)/`, `/(book|massage|hair|facial)/`, else FAQ.
-- **Chat simulator vs buttons**
-  Both provided; chat shows more realistic flow, tables give admin actions.
-- **Persistence**
-  SQLite chosen for simplicity, Prisma migrations for schema.
+- **FAQ flow:** returns relevant passage
+- **Booking flow:** row persisted; ISO start ~tomorrow 15–18h
+- **Payment flow:** invoice creation; `/send` flips to `sent`; paylink returned
 
 ---
 
-## What I'd Build Next
+## Re-ingest / Inspect / Reset
 
-- Usage counters per tenant (messages, bookings).
-- Richer booking parser (natural language date/time, services).
-- Real integrations (Twilio WhatsApp, Stripe payment).
-- Authentication + per-tenant dashboard.
+- Re-ingest from the **Bookings** page (button) or:
+  ```
+  curl -s "http://localhost:3000/api/kb/ingest?tenantId=<TENANT_ID>"
+  ```
+- Inspect DB:
+  ```bash
+  pnpm dlx prisma studio
+  ```
+- Reset DB:
+  ```bash
+  rm -f prisma/dev.db && pnpm db:migrate
+  ```
 
 ---
 
-## Screenshots
+## Design Notes
 
-_(Add here screenshots of Onboarding, Bookings, Chat, Invoices, Pay page for clarity)_
-
----
+- **Simple, testable ranking:** TF-IDF is transparent and sufficient for a small fixture.
+- **Regex intent detection:** fast and clear; upgrade path to an ML
