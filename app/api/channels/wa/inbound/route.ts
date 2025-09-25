@@ -137,10 +137,36 @@ export async function POST(req: Request) {
   }
 
   if (kind === "payment") {
+    // for demo purpose
+    const amount = 100;
+    const paylinkBase =
+      process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+    const created = await prisma.invoices.create({
+      data: {
+        tenant_id: tenantId,
+        amount,
+        currency: "AED",
+        status: "pending",
+        paylink: "",
+        customer_phone: from,
+      },
+      select: { id: true },
+    });
+
+    const link = `${paylinkBase}/pay/${created.id}`;
+    const invoice = await prisma.invoices.update({
+      where: { id: created.id },
+      data: { paylink: link },
+      select: { id: true, status: true, paylink: true },
+    });
+
     return NextResponse.json(
       {
         type: "payment",
-        reply: "Thanks! payment up next",
+        invoiceId: invoice.id,
+        paylink: invoice.paylink,
+        reply: `You can pay securely here: ${invoice.paylink}`,
       },
       { status: 200 }
     );
