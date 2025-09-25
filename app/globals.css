@@ -24,3 +24,22 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* tiny UI atoms */
+.btn {
+  @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium shadow-sm
+         ring-1 ring-slate-300 hover:bg-slate-50 active:scale-[0.99]
+         dark:ring-slate-700 dark:hover:bg-slate-900 transition;
+}
+.btn-primary {
+  @apply bg-slate-900 text-white ring-slate-950 hover:bg-slate-800
+         dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200;
+}
+.input {
+  @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm
+         placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400
+         dark:bg-slate-900 dark:border-slate-700 dark:placeholder:text-slate-500;
+}
+.card {
+  @apply rounded-2xl border border-slate-200 p-5 shadow-sm dark:border-slate-800;
+}

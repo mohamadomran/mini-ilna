@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const { searchParams } = new URL(req.url);
   const tenantId = searchParams.get("tenantId");
+  let html: string;
 
   if (!tenantId)
     return NextResponse.json(
@@ -22,7 +23,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "tenant not found" }, { status: 404 });
 
   const filePath = path.join(process.cwd(), "fixtures", "website.html");
-  const html = await fs.readFile(filePath, "utf-8");
+
+  try {
+    html = await fs.readFile(filePath, "utf-8");
+  } catch {
+    return NextResponse.json(
+      { error: `Fixture not found at ${filePath}` },
+      { status: 404 }
+    );
+  }
+
   const text = htmlToText(html);
   const chunks = splitIntoChunks(text, 700, { overlapChars: 100 });
 

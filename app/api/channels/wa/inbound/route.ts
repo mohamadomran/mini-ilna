@@ -17,7 +17,11 @@ export function classifyText(input: string): InboundKind {
   const s = input.toLowerCase();
 
   if (/(pay|deposit|card|payment|visa|mastercard)/i.test(s)) return "payment";
-  if (/(book|appointment|massage|hair|facial|slot|reserve|schedule)/i.test(s))
+  if (
+    /(book|booking|appointm(e|)nt|appt|massage|hair|facial|slot|reserve|schedule)/i.test(
+      s
+    )
+  )
     return "booking";
   return "faq";
 }
@@ -33,13 +37,34 @@ function truncate(str: string, max = 200): string {
 function extractService(text: string): string {
   const t = text.toLowerCase();
 
-  if (t.includes("60m") && t.includes("massage")) return "60m massage";
-  if (t.includes("massage")) return "massage";
-  if (t.includes("facial")) return "facial";
-  if (t.includes("hair")) return "hair";
-  if (t.includes("appointment")) return "appointment";
+  const minMatch = t.match(/\b(\d{1,3})\s*(m|min|mins|minute|minutes)\b/);
+  const hourMatch = t.match(/\b(\d{1,2})\s*(h|hr|hrs|hour|hours)\b/);
+  let normDur: string | null = null;
 
-  return "general service";
+  if (minMatch) {
+    normDur = `${parseInt(minMatch[1], 10)}m`;
+  } else if (hourMatch) {
+    normDur = `${parseInt(hourMatch[1], 10) * 60}m`;
+  }
+
+  const has = (re: RegExp) => re.test(t);
+
+  // Service detection (expandable)
+  let service: string | null = null;
+  if (has(/massage/)) service = "massage";
+  else if (has(/facial/)) service = "facial";
+  else if (has(/hair(cut| style| color)?|blow ?dry/)) service = "hair";
+  else if (has(/manicure|pedicure|nails?/)) service = "nails";
+  else if (has(/spa|treatment/)) service = "treatment";
+
+  // If user only says "book/booking/appointment…" with no explicit service
+  if (!service && has(/book|booking|appointm(e|)nt|reserve|schedule|slot/)) {
+    service = "appointment";
+  }
+
+  if (!service) return "general";
+
+  return normDur ? `${normDur} ${service}` : service;
 }
 
 export async function POST(req: Request) {
@@ -123,14 +148,19 @@ export async function POST(req: Request) {
       select: { id: true, start_time: true, service: true },
     });
 
+    const startLocal = new Date(
+      booking.start_time.getTime() - new Date().getTimezoneOffset() * 60000
+    )
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 16);
+
     return NextResponse.json(
       {
         type: "booking",
         bookingId: booking.id,
         start: booking.start_time.toISOString(),
-        reply: `Booked ${
-          booking.service
-        } at ${booking.start_time.toISOString()}`,
+        reply: `Booked ${booking.service} at ${startLocal}`,
       },
       { status: 200 }
     );
@@ -166,7 +196,7 @@ export async function POST(req: Request) {
         type: "payment",
         invoiceId: invoice.id,
         paylink: invoice.paylink,
-        reply: `You can pay securely here: ${invoice.paylink}`,
+        reply: `You can pay securely here`,
       },
       { status: 200 }
     );
