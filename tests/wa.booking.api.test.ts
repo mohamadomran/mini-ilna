@@ -65,6 +65,40 @@ describe("POST /api/channels/wa/inbound (Booking flow)", () => {
     expect((persisted?.service || "").toLowerCase()).toContain("massage");
   });
 
+  it('respects explicit times like "book tomorrow at 2pm"', async () => {
+    const t = await prisma.tenants.create({
+      data: {
+        name: "Explicit Time Spa",
+        email: `explicit-${Date.now()}@x.local`,
+        website: `https://explicit-${Date.now()}.example`,
+      },
+    });
+
+    const req = new Request("https://localhost/api/channels/wa/inbound", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tenantId: t.id,
+        from: "+971500000777",
+        text: "Please book tomorrow at 2pm",
+      }),
+    });
+
+    const res = await inbound(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body.type).toBe("booking");
+    expect(body.bookingId).toBeTruthy();
+
+    const start = new Date(body.start);
+    const targetLower = tomorrowAt(14, 0).getTime();
+    const targetUpper = tomorrowAt(15, 0).getTime();
+
+    expect(start.getTime()).toBeGreaterThanOrEqual(targetLower);
+    expect(start.getTime()).toBeLessThan(targetUpper);
+  });
+
   it("400s on invalid body", async () => {
     const bad = new Request("https://localhost/api/channels/wa/inbound", {
       method: "POST",
