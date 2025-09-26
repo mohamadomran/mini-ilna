@@ -17,6 +17,201 @@ export function tokenize(text: string): string[] {
     .map(normalizeToken);
 }
 
+const SNIPPET_STOP = new Set([
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "how",
+  "why",
+  "can",
+  "do",
+  "does",
+  "is",
+  "are",
+  "your",
+  "you",
+  "me",
+  "please",
+  "tell",
+  "about",
+  "any",
+  "give",
+  "need",
+  "info",
+  "information",
+  "kind",
+  "type",
+]);
+
+const QUERY_STOP = new Set([
+  ...SNIPPET_STOP,
+  "are",
+  "am",
+  "is",
+  "was",
+  "were",
+  "be",
+  "been",
+  "can",
+  "could",
+  "would",
+  "should",
+  "will",
+  "shall",
+  "might",
+  "may",
+  "please",
+  "tell",
+  "about",
+  "give",
+  "need",
+  "info",
+  "information",
+  "kind",
+  "type",
+  "any",
+  "me",
+  "us",
+  "do",
+  "does",
+  "did",
+]);
+
+function expandTokens(tokens: string[]): string[] {
+  const expanded = new Set<string>();
+
+  for (const tok of tokens) {
+    expanded.add(tok);
+
+    if (tok.endsWith("ing") && tok.length > 4) {
+      expanded.add(tok.slice(0, -3));
+    }
+    if (tok.endsWith("ed") && tok.length > 4) {
+      expanded.add(tok.slice(0, -2));
+    }
+    if (tok.endsWith("ly") && tok.length > 4) {
+      expanded.add(tok.slice(0, -2));
+    }
+    if (tok.endsWith("es") && tok.length > 4) {
+      expanded.add(tok.slice(0, -2));
+    }
+    if (tok.endsWith("s") && tok.length > 3) {
+      expanded.add(tok.slice(0, -1));
+    }
+
+    if (tok === "opening" || tok === "opened") expanded.add("open");
+    if (tok === "closing" || tok === "closed") expanded.add("close");
+    if (tok === "hours") expanded.add("hour");
+    if (tok === "services" || tok === "service") {
+      expanded.add("service");
+      expanded.add("services");
+    }
+  }
+
+  return Array.from(expanded);
+}
+
+export function extractSnippet(
+  text: string,
+  query: string,
+  maxLen = 200
+): string {
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[\p{L}(0-9])/u)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (!sentences.length) {
+    return text.length > maxLen ? `${text.slice(0, maxLen).trim()}…` : text;
+  }
+
+  const rawTokens = tokenize(query).filter(
+    (tok) => tok.length > 1 && !SNIPPET_STOP.has(tok)
+  );
+
+  const expandedQueryTokens = expandTokens(rawTokens);
+
+  const queryHasTimeIntent = expandedQueryTokens.some((tok) =>
+    ["hour", "hours", "time", "open", "opening", "close", "closing"].includes(tok)
+  );
+
+  const queryTokens = new Set(expandedQueryTokens);
+
+  let bestIdx = 0;
+  let bestScore = -Infinity;
+
+  const loweredSentenceCache = new Map<string, string>();
+
+  const scoreSentence = (sentence: string, index: number): number => {
+    const tokens = tokenize(sentence);
+    if (!tokens.length) return -1;
+
+    let overlap = 0;
+    const uniques = new Set<string>();
+    for (const tok of tokens) {
+      if (queryTokens.has(tok)) {
+        overlap += 1;
+        uniques.add(tok);
+      }
+    }
+
+    if (overlap === 0) return -tokens.length * 0.01;
+
+    const density = overlap / tokens.length;
+    let score = uniques.size * 2 + density;
+
+    const lowered = loweredSentenceCache.get(sentence) ?? sentence.toLowerCase();
+    loweredSentenceCache.set(sentence, lowered);
+
+    if (queryHasTimeIntent) {
+      if (/\b(open|opening|close|closing|hour|hours)\b/.test(lowered)) {
+        score += 0.75;
+      }
+      if (/\b\d{1,2}(:\d{2})?\s?(am|pm)\b/.test(lowered)) {
+        score += 1;
+      }
+      if (/\b\d{1,2}(?:\s?[–-]\s?\d{1,2})\b/.test(lowered)) {
+        score += 0.8;
+      }
+    }
+
+    if (/\b(policy|policies|deposit|cancellation)\b/.test(lowered)) {
+      score -= 0.4;
+    }
+
+    // Slight bias towards earlier sentences when scores tie closely
+    score -= index * 0.01;
+
+    return score;
+  };
+
+  sentences.forEach((sentence, idx) => {
+    const score = scoreSentence(sentence, idx);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = idx;
+    }
+  });
+
+  let snippet = sentences[bestIdx];
+
+  if (snippet.length < maxLen * 0.6 && bestIdx + 1 < sentences.length) {
+    const next = sentences[bestIdx + 1];
+    const combined = `${snippet} ${next}`.trim();
+    if (combined.length <= maxLen) {
+      snippet = combined;
+    }
+  }
+
+  if (snippet.length > maxLen) {
+    snippet = `${snippet.slice(0, maxLen).trim()}…`;
+  }
+
+  return snippet;
+}
+
 type KnowledgeChunk = Pick<kb_chunks, "id" | "text" | "meta">;
 
 export type RankedChunk = {
@@ -59,7 +254,8 @@ export function rankChunksByTfIdf(
 ): RankedChunk[] {
   if (!chunks.length) return [];
 
-  const queryTerms = tokenize(query);
+  const baseTokens = tokenize(query).filter((tok) => !QUERY_STOP.has(tok));
+  const queryTerms = expandTokens(baseTokens);
   if (!queryTerms.length) return [];
 
   const { idfScores } = buildInverseDocumentFrequencies(chunks);
