@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { prisma } from "../lib/db";
 import { POST as inbound } from "../app/api/channels/wa/inbound/route";
 import { POST as sendInvoice } from "../app/api/invoices/[id]/send/route";
+import { POST as markPaid } from "../app/api/invoices/[id]/mark-paid/route";
 import { resetDb } from "./_utils/db";
 
 describe("Payment flow", () => {
@@ -103,5 +104,47 @@ describe("Payment flow", () => {
     );
 
     expect(res.status).toBe(404);
+  });
+
+  it("POST /api/invoices/:id/mark-paid flips status to paid", async () => {
+    const tenant = await prisma.tenants.create({
+      data: {
+        name: "Pay Later",
+        email: `pay-${Date.now()}@test.local`,
+        website: `https://pay-${Date.now()}.example`,
+      },
+    });
+
+    const invoice = await prisma.invoices.create({
+      data: {
+        tenant_id: tenant.id,
+        amount: 220,
+        currency: "AED",
+        status: "sent",
+        paylink: `http://localhost:3000/pay/${Date.now()}`,
+        customer_phone: "+971500000777",
+      },
+      select: { id: true },
+    });
+
+    const res = await markPaid(new Request("http://localhost/api/invoices", {
+      method: "POST",
+    }), {
+      params: { id: invoice.id },
+    });
+
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.status).toBe("paid");
+    expect(json.tenantId).toBe(tenant.id);
+
+    const updated = await prisma.invoices.findUnique({
+      where: { id: invoice.id },
+      select: { status: true },
+    });
+
+    expect(updated?.status).toBe("paid");
   });
 });

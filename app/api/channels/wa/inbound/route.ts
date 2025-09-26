@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { rankChunksByTfIdf } from "@/lib/rank";
+import { extractSnippet, rankChunksByTfIdf } from "@/lib/rank";
 import { parseWhen } from "@/lib/when";
 import {
   loadQuietHoursFromEnv,
@@ -25,22 +25,23 @@ export function classifyText(input: string): InboundKind {
   const s = input.toLowerCase();
 
   if (/(pay|deposit|card|payment|visa|mastercard)/i.test(s)) return "payment";
-  if (
-    /(book|booking|appointment|appt|massage|hair|facial|slot|reserve|schedule)/i.test(
+  if (/how\s+much/i.test(s) || /how\s+many/i.test(s)) {
+    return "faq";
+  }
+
+  const hasBookingVerb = /(book|booking|appointment|appt|reserve|schedule)/i.test(s);
+  const hasServiceWord = /(massage|facial|hair|nails?|spa|treatment|manicure|pedicure)/i.test(
+    s
+  );
+  const hasTimeIndicator =
+    /(\b(?:today|tonight|tomorrow|morning|afternoon|evening|tonite)\b|\bnext\s+(?:week|day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?\b|\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b|\bafter\s+\d{1,2}(?:am|pm)?\b|\bat\s+\d{1,2}(?::\d{2})?\s?(?:am|pm)?\b)/i.test(
       s
-    )
-  ) {
+    );
+
+  if (hasBookingVerb || (hasServiceWord && hasTimeIndicator)) {
     return "booking";
   }
   return "faq";
-}
-
-function truncate(str: string, max = 200): string {
-  if (str.length <= max) return str;
-
-  const cut = str.slice(0, max - 1);
-  const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > 120 ? cut.slice(0, lastSpace) : cut) + "...";
 }
 
 function extractService(text: string): string {
@@ -134,7 +135,7 @@ export async function POST(req: Request) {
     }
 
     const top = ranked[0];
-    const reply = truncate(top.text, 200);
+    const reply = extractSnippet(top.text, text, 200);
 
     return NextResponse.json(
       {

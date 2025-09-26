@@ -200,6 +200,7 @@ export default async function BookingsPage({
         </div>
         <form action={reingestTenantKb}>
           <input type="hidden" name="tenantId" value={tenantId} />
+          <input type="hidden" name="returnTo" value={returnTo} />
           <button type="submit" className="btn btn-secondary">
             {t("actions.reingest")}
           </button>

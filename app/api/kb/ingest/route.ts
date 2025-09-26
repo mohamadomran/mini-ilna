@@ -34,7 +34,10 @@ export async function POST(req: Request) {
   }
 
   const text = htmlToText(html);
-  const chunks = splitIntoChunks(text, 700, { overlapChars: 100 });
+  const chunks = splitIntoChunks(text, 420, {
+    minChars: 180,
+    overlapChars: 80,
+  });
 
   if (chunks.length === 0)
     return NextResponse.json({ error: "No chunks extracted" }, { status: 422 });

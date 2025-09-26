@@ -91,4 +91,83 @@ describe("POST /api/channels/wa/inbound (FAQ flow)", () => {
     const res = await inbound(badRequest);
     expect([400, 422]).toContain(res.status);
   });
+
+  it("selects the most relevant sentence instead of the chunk prefix", async () => {
+    const tenant = await prisma.tenants.create({
+      data: {
+        name: "Snippet Spa",
+        email: `snippet-${Date.now()}@x.local`,
+        website: `https://snippet-${Date.now()}.example`,
+      },
+    });
+
+    const chunkText =
+      "Serenity Spa is located in the heart of the city. Open Monday–Saturday from 9am to 7pm, closed Sundays. Appointments recommended for peak hours.";
+
+    await prisma.kb_chunks.create({
+      data: {
+        tenant_id: tenant.id,
+        text: chunkText,
+        meta: { tf: tfForm(chunkText) },
+      },
+    });
+
+    const req = new Request("http://localhost/api/channels/wa/inbound", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tenantId: tenant.id,
+        from: "+971500000123",
+        text: "what time do you open",
+      }),
+    });
+
+    const res = await inbound(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body.type).toBe("faq");
+    expect(body.reply.toLowerCase().startsWith("open monday".toLowerCase())).toBe(
+      true
+    );
+    expect(body.reply).not.toMatch(/^Serenity Spa is located/i);
+  });
+
+  it("treats price questions as FAQ, not bookings", async () => {
+    const tenant = await prisma.tenants.create({
+      data: {
+        name: "Pricing Spa",
+        email: `pricing-${Date.now()}@x.local`,
+        website: `https://pricing-${Date.now()}.example`,
+      },
+    });
+
+    const priceInfo =
+      "Facial Treatment costs AED 250 and includes a 45 minute rejuvenating session.";
+
+    await prisma.kb_chunks.create({
+      data: {
+        tenant_id: tenant.id,
+        text: priceInfo,
+        meta: { tf: tfForm(priceInfo) },
+      },
+    });
+
+    const req = new Request("http://localhost/api/channels/wa/inbound", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tenantId: tenant.id,
+        from: "+971500000555",
+        text: "How much does the facial treatment cost?",
+      }),
+    });
+
+    const res = await inbound(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body.type).toBe("faq");
+    expect(body.reply).toMatch(/AED/);
+  });
 });

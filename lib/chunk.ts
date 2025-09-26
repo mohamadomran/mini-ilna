@@ -12,7 +12,7 @@ export function htmlToText(html: string): string {
   });
 
   root
-    .querySelectorAll("script,style,meta,nav,footer,header")
+    .querySelectorAll("script,style,meta,nav,footer")
     .forEach((el) => el.remove());
 
   // prefer structured/inner text if available
@@ -30,18 +30,15 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-const intoParagraphs = (text: string): string[] =>
-  text
+const intoBlocks = (text: string): string[] => {
+  return text
     .split(/\n{2,}/g)
     .map((s) => s.trim())
-    .filter(Boolean);
-
-// Split on sentence enders, keep Unicode initials
-const intoSentences = (paragraph: string): string[] =>
-  paragraph
-    .split(/(?<=[.!?])\s+(?=[\p{L}(0-9])/u)
-    .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((block) =>
+      block.replace(/\s+/g, " ").replace(/\s*([.!?])\s*/g, "$1 ").trim()
+    );
+};
 
 // Pack sentences into ~maxChars with overlap
 export function splitIntoChunks(
@@ -52,7 +49,31 @@ export function splitIntoChunks(
   const minChars = opts?.minChars ?? Math.floor(maxChars * 0.5);
   const overlapChars = opts?.overlapChars ?? Math.floor(maxChars * 0.15);
 
-  const sentences = intoParagraphs(text).flatMap(intoSentences);
+  let blocks = intoBlocks(text);
+
+  // For short blocks, try to merge small siblings (e.g. headlines + paragraph)
+  if (blocks.length > 1) {
+    const merged: string[] = [];
+    let buffer = "";
+    for (const block of blocks) {
+      const candidate = buffer ? `${buffer} ${block}`.trim() : block;
+      if (candidate.length <= maxChars * 0.75) {
+        buffer = candidate;
+      } else {
+        if (buffer) merged.push(buffer);
+        buffer = block;
+      }
+    }
+    if (buffer) merged.push(buffer);
+    blocks = merged;
+  }
+
+  const sentences = blocks.flatMap((block) =>
+    block
+      .split(/(?<=[.!?])\s+(?=[\p{L}(0-9])/u)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
   const chunks: string[] = [];
   let buf: string[] = [];
   let len = 0;

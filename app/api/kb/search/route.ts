@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   });
 
   if (chunks.length === 0) {
-    return NextResponse.json({ results: [] }, { status: 200 });
+    return NextResponse.json([], { status: 200 });
   }
 
   const ranked = rankChunksByTfIdf(chunks, query, 3);
